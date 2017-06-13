@@ -84,6 +84,7 @@ class AmForms_SubmissionsController extends BaseController
         $this->requirePostRequest();
 
         // Get the form
+        $submissionInvalid = false;
         $handle = craft()->request->getRequiredPost('handle');
         $form = craft()->amForms_forms->getFormByHandle($handle);
         if (! $form) {
@@ -108,6 +109,7 @@ class AmForms_SubmissionsController extends BaseController
             $submission = new AmForms_SubmissionModel();
         }
 
+        
         // Front-end submission, trigger AntiSpam or reCAPTCHA?
         if (! craft()->request->isCpRequest()) {
             // Where was this submission submitted?
@@ -118,101 +120,116 @@ class AmForms_SubmissionsController extends BaseController
 
             // Redirect our spammers before reCAPTCHA can be triggered
             if (! $submission->spamFree) {
-                $this->_doRedirect($submission, false);
+                if (craft()->request->isAjaxRequest()) {
+                    $submissionInvalid = true;
+                    $this->returnJson(array(
+                        'success' => false,
+                        'errors' => ['@meta' => array('spam detected')]
+                    ));
+                }
+                else {
+                    $this->_doRedirect($submission, false);
+                }
             }
             else {
                 craft()->amForms_antispam->setMarkedAsNoSpam($form->handle);
             }
 
-            // Validate reCAPTCHA
-            if (craft()->amForms_settings->isSettingValueEnabled('googleRecaptchaEnabled', AmFormsModel::SettingRecaptcha)) {
-                $submission->spamFree = craft()->amForms_recaptcha->verify();
+            if (!$submissionInvalid) {
 
-                // Was it verified?
-                if (! $submission->spamFree) {
-                    $submission->addError('spamFree', Craft::t('reCAPTCHA was not verified.'));
+                // Validate reCAPTCHA
+                if (craft()->amForms_settings->isSettingValueEnabled('googleRecaptchaEnabled', AmFormsModel::SettingRecaptcha)) {
+                    $submission->spamFree = craft()->amForms_recaptcha->verify();
 
-                    // Don't upload files now
-                    if (count($_FILES)) {
-                        foreach ($_FILES as $key => $file) {
-                            unset($_FILES[$key]);
+                    // Was it verified?
+                    if (! $submission->spamFree) {
+                        $submission->addError('spamFree', Craft::t('reCAPTCHA was not verified.'));
+
+                        // Don't upload files now
+                        if (count($_FILES)) {
+                            foreach ($_FILES as $key => $file) {
+                                unset($_FILES[$key]);
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Add the form to the submission
-        $submission->form = $form;
-        $submission->formId = $form->id;
+        if (!$submissionInvalid) {
 
-        // Set attributes
-        $fieldsLocation = craft()->request->getPost('fieldsLocation', 'fields');
-        $submission->ipAddress = craft()->request->getUserHostAddress();
-        $submission->userAgent = craft()->request->getUserAgent();
-        if ($namespace) {
-            $namespaceAttributes = craft()->request->getPost($namespace);
-            if (isset($namespaceAttributes[$fieldsLocation])) {
-                $submission->setContentPostLocation($namespace . '.' . $fieldsLocation);
-                $submission->setContentFromPost($namespaceAttributes[$fieldsLocation]);
-            }
-        }
-        else {
-            $submission->setContentPostLocation($fieldsLocation);
-            $submission->setContentFromPost($fieldsLocation);
-        }
+            // Add the form to the submission
+            $submission->form = $form;
+            $submission->formId = $form->id;
 
-        // Save submission
-        if (craft()->amForms_submissions->saveSubmission($submission)) {
-            // Remove spam free token
-            craft()->amForms_antispam->verify($form->handle);
-
-            // Notification for new submissions
-            if (! craft()->request->isCpRequest() && ! $submissionId) {
-                craft()->amForms_submissions->emailSubmission($submission);
-            }
-
-            // Redirect
-            if (craft()->request->isAjaxRequest()) {
-                $afterSubmitText = $form->afterSubmitText ? $form->afterSubmitText : Craft::t('Thanks for your submission.');
-                $this->returnJson(array(
-                    'success' => true,
-                    'afterSubmitText' => $afterSubmitText
-                ));
-            }
-            elseif (craft()->request->isCpRequest()) {
-                craft()->userSession->setNotice(Craft::t('Submission saved.'));
-
-                $this->redirectToPostedUrl($submission);
+            // Set attributes
+            $fieldsLocation = craft()->request->getPost('fieldsLocation', 'fields');
+            $submission->ipAddress = craft()->request->getUserHostAddress();
+            $submission->userAgent = craft()->request->getUserAgent();
+            if ($namespace) {
+                $namespaceAttributes = craft()->request->getPost($namespace);
+                if (isset($namespaceAttributes[$fieldsLocation])) {
+                    $submission->setContentPostLocation($namespace . '.' . $fieldsLocation);
+                    $submission->setContentFromPost($namespaceAttributes[$fieldsLocation]);
+                }
             }
             else {
-                $this->_doRedirect($submission, true);
+                $submission->setContentPostLocation($fieldsLocation);
+                $submission->setContentFromPost($fieldsLocation);
             }
-        }
-        else {
-            if (craft()->request->isAjaxRequest()) {
-                $return = array(
-                    'success' => false,
-                    'errors' => $submission->getErrors()
-                );
-                $this->returnJson($return);
-            }
-            elseif (craft()->request->isCpRequest()) {
-                craft()->userSession->setError(Craft::t('Couldn’t save submission.'));
 
-                // Send the submission back to the template
-                craft()->urlManager->setRouteVariables(array(
-                    'submission' => $submission
-                ));
+            // Save submission
+            if (craft()->amForms_submissions->saveSubmission($submission)) {
+                // Remove spam free token
+                craft()->amForms_antispam->verify($form->handle);
+
+                // Notification for new submissions
+                if (! craft()->request->isCpRequest() && ! $submissionId) {
+                    craft()->amForms_submissions->emailSubmission($submission);
+                }
+
+                // Redirect
+                if (craft()->request->isAjaxRequest()) {
+                    $afterSubmitText = $form->afterSubmitText ? $form->afterSubmitText : Craft::t('Thanks for your submission.');
+                    $this->returnJson(array(
+                        'success' => true,
+                        'afterSubmitText' => $afterSubmitText
+                    ));
+                }
+                elseif (craft()->request->isCpRequest()) {
+                    craft()->userSession->setNotice(Craft::t('Submission saved.'));
+
+                    $this->redirectToPostedUrl($submission);
+                }
+                else {
+                    $this->_doRedirect($submission, true);
+                }
             }
             else {
-                // Remember active submissions
-                craft()->amForms_submissions->setActiveSubmission($submission);
+                if (craft()->request->isAjaxRequest()) {
+                    $return = array(
+                        'success' => false,
+                        'errors' => $submission->getErrors()
+                    );
+                    $this->returnJson($return);
+                }
+                elseif (craft()->request->isCpRequest()) {
+                    craft()->userSession->setError(Craft::t('Couldn’t save submission.'));
 
-                // Return the submission by the form's handle, for custom HTML possibilities
-                craft()->urlManager->setRouteVariables(array(
-                    $form->handle => $submission
-                ));
+                    // Send the submission back to the template
+                    craft()->urlManager->setRouteVariables(array(
+                        'submission' => $submission
+                    ));
+                }
+                else {
+                    // Remember active submissions
+                    craft()->amForms_submissions->setActiveSubmission($submission);
+
+                    // Return the submission by the form's handle, for custom HTML possibilities
+                    craft()->urlManager->setRouteVariables(array(
+                        $form->handle => $submission
+                    ));
+                }
             }
         }
     }

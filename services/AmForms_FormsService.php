@@ -255,7 +255,7 @@ class AmForms_FormsService extends BaseApplicationComponent
     public function getNamespaceForForm(AmForms_FormModel $form, $createNewOnEmpty = true)
     {
         if (! isset($this->_namespaces[ $form->id ]) && $createNewOnEmpty) {
-            $this->_namespaces[ $form->id ] = 'form_'.StringHelper::randomString(10);
+            $this->_namespaces[ $form->id ] = 'form_'.$form->handle;//StringHelper::randomString(10);
         }
 
         return isset($this->_namespaces[ $form->id ]) ? $this->_namespaces[ $form->id ] : false;
@@ -362,7 +362,7 @@ class AmForms_FormsService extends BaseApplicationComponent
         $submission = craft()->amForms_submissions->getActiveSubmission($form);
 
         // Set namespace
-        $namespace = 'form_'.StringHelper::randomString(10);
+        $namespace = 'form_'.$form->handle;//StringHelper::randomString(10);
         craft()->templates->setNamespace($namespace);
 
         // Build field HTML
