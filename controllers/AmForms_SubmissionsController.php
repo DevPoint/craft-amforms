@@ -408,7 +408,7 @@ class AmForms_SubmissionsController extends BaseController
         $filePath = AssetsHelper::getTempFilePath(IOHelper::getExtension($fileName));
         move_uploaded_file($file['tmp_name'], $filePath);
 
-        $response = craft()->assets->insertFileByLocalPath($filePath, $fileName, $folderId);
+        $response = craft()->assets->insertFileByLocalPath($filePath, $fileName, $folderId, AssetConflictResolution::KeepBoth);
 
         // Make sure the file is removed.
         IOHelper::deleteFile($filePath, true);
