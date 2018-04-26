@@ -240,8 +240,7 @@ class AmForms_SubmissionsService extends BaseApplicationComponent
         }
 
         // Get our recipients
-        $recipients = ArrayHelper::stringToArray($form->notificationRecipients);
-
+        $recipients = ArrayHelper::stringToArray($this->_translatedObjectPlusEnvironment($form->notificationRecipients, $submission));
         if ($overrideRecipients !== false) {
             if (is_array($overrideRecipients) && count($overrideRecipients)) {
                 $recipients = $overrideRecipients;
@@ -256,6 +255,7 @@ class AmForms_SubmissionsService extends BaseApplicationComponent
         }
 
         // Other email attributes
+        $replyTo = null;
         if ($form->notificationReplyToEmail) {
             $replyTo = $this->_translatedObjectPlusEnvironment($form->notificationReplyToEmail, $submission);
             if (! filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
